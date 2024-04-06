@@ -21,22 +21,6 @@ classdef L_SUKF < handle
         w_b_a;                    % The Accelerometer measurement noise variance
         w_b_g;                    % The Gyroscope measurement noise variance
         w_g_n;                    % The GPS measurement noise variance
-        
-        SO3_set_of_rotations = [...  % The roll, pitch, yaw angles set of ZYX rotations in SO(3)
-            0, 0, 0; ...
-            30, 30, 30; ...
-            60, 60, 60; ...
-            30, 0, 0; ...
-            0, 30, 0; ...
-            0, 0, 30; ...
-            30, 30, 0; ...
-            0, 30, 30; ...
-            30, 0, 30; ...
-            60, 0, 0; ...
-            0, 60, 0; ...
-            0, 0, 60; ...
-            90, 90, 0 ...
-        ];
     end
     
     properties (Access = public)
@@ -327,14 +311,10 @@ classdef L_SUKF < handle
         function output = calc_X_pred_from_SigmaY_points(obj, sigmaYpoints)
             phiLen  = size(obj.phi_b_k, 1);
             % Get phi^b(k|k-1) in SO(3) space for Pk calculation
-            obj.phi_b_k_SO3 = obj.Calc_phi_b_pred_Alg1();
+            obj.phi_b_k_SO3 = obj.Calc_phi_b_pred_SO3_Alg1(sigmaYpoints);
             
             % Get phi^b(k|k-1) (not written in the paper)
-            ksiPhi = sigmaYpoints(1:size(obj.phi_b_k,1), :);
-            tempPhi = zeros(size(obj.phi_b_k));
-            for i=1:size(sigmaYpoints,2)
-                tempPhi = tempPhi + obj.W_m_i(i,1) * ksiPhi(:,i);
-            end
+            ksiPhi = obj.so3_to_euclid(obj.SO3_to_so3(obj.phi_b_k_SO3));
             
             % Get B(k|k-1)
             ksiB    = sigmaYpoints(phiLen+1:phiLen+size(obj.B,1), :);
@@ -343,7 +323,7 @@ classdef L_SUKF < handle
                 tempB = tempB + obj.W_m_i(i,1)*ksiB(:,i);
             end
             
-            output = [tempPhi; tempB];
+            output = [ksiPhi; tempB];
         end
                 
 
@@ -459,17 +439,22 @@ classdef L_SUKF < handle
         
         
         %% Algorithm 1 (from the main article) implementation
-        function output = Calc_phi_b_pred_Alg1(obj)
-            % Step 1 - H = Z0
-            matr_H = obj.CalcRM(obj.SO3_set_of_rotations(1,:));
+        function output = Calc_phi_b_pred_SO3_Alg1(obj, sigmaYPoints)
+            % Step 0 - Get all Zi matrices from the (1:3,1) values of each
+            %            Sigma point except the 13th one
+            matr_Zi = sigmaYPoints(1:3, 1:obj.L+1);
+            
+            % Step 1 - H = Z0 (convert ksi0 vector to SO3 matrix)
+            matr_H = obj.so3_to_SO3(obj.getSkewSym(matr_Zi(:,1)));
+            
             % Step 2 - Calc Omega matrix
             omega_matr = zeros(3);
             for i=2:obj.L+1
-                temp = obj.CalcRM(obj.SO3_set_of_rotations(i,:)) / matr_H;
-                omega_matr = omega_matr + obj.W_m_i(i,1) * obj.SO3_to_so3(temp);
+                temp = obj.SO3_to_so3(obj.so3_to_SO3(obj.getSkewSym(matr_Zi(:,i))) / matr_H);
+                omega_matr = omega_matr + obj.W_m_i(i,1) * so3_to_euclid(temp);
             end
             % Step 3 - Calc H matrix
-            output = obj.so3_to_SO3(omega_matr) * matr_H;
+            output = obj.so3_to_SO3(obj.getSkewSym(omega_matr)) * matr_H;
         end
         
         
