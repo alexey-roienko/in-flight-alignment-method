@@ -97,7 +97,7 @@ classdef L_SUKF < handle
             obj.X_i_Sigma_points  = zeros(obj.L, obj.L+2);
             
             %obj.Calc_Xij_coefficient_matrix_incor();
-            obj.X_ij_Sigma_points = obj.Calc_Xij_coefficient_matrix();
+            obj.X_ij_Sigma_points = obj.Calc_Xij_coefficient_matrix_ver2();
             
             obj.B        = [obj.dV_ib_k; obj.eps_b_k; obj.delta_b_k];
             obj.X_k_1    = [obj.phi_b_k; obj.B];
@@ -154,7 +154,7 @@ classdef L_SUKF < handle
             dX_k         = obj.K * (obj.Z - obj.Z_pred);
             
             %       2e:Update the both parts of the X vector
-%             phi_b_k_upd  = exp(dX_k(1:size(obj.phi_b_k,1), 1)) .* ...
+%             phi_b_k_upd  = exp(dX_k(1:size(obj.phi_b_k_SO3,1), 1)) .* ...
 %                               obj.X_k_pred(1:size(obj.phi_b_k,1), 1);
             phi_b_k_upd  = dX_k(1:size(obj.phi_b_k,1), 1) + ...
                               obj.X_k_pred(1:size(obj.phi_b_k,1), 1);
@@ -364,7 +364,7 @@ classdef L_SUKF < handle
 
 
         %% Fill in the Xij-coefficient matrix
-        function output = Calc_Xij_coefficient_matrix(obj)
+        function output = Calc_Xij_coefficient_matrix_ver2(obj)
             output = nan(obj.L, obj.L+2);
             % For i=0,4,...,L+1
             for i=0:obj.L+1
@@ -448,10 +448,10 @@ classdef L_SUKF < handle
             matr_H = obj.so3_to_SO3(obj.getSkewSym(matr_Zi(:,1)));
             
             % Step 2 - Calc Omega matrix
-            omega_matr = zeros(3);
+            omega_matr = zeros(3,1);
             for i=2:obj.L+1
                 temp = obj.SO3_to_so3(obj.so3_to_SO3(obj.getSkewSym(matr_Zi(:,i))) / matr_H);
-                omega_matr = omega_matr + obj.W_m_i(i,1) * so3_to_euclid(temp);
+                omega_matr = omega_matr + obj.W_m_i(i,1) * obj.so3_to_euclid(temp);
             end
             % Step 3 - Calc H matrix
             output = obj.so3_to_SO3(obj.getSkewSym(omega_matr)) * matr_H;
@@ -541,27 +541,25 @@ classdef L_SUKF < handle
 
         
         %% Fill in the Xij-coefficient matrix
-%         function Calc_Xij_coefficient_matrix(obj)
-%             output = zeros(obj.L, obj.L+2);
-%             % For i=0, the 1st column has been already filled with zeros
-%             
-%             coefW1 = 1/(2 * obj.W_m_i(2,1))^(1/2);
-%             % For i=1,
-%             output(1,2) = (-1)^2 * coefW1;
-%             output(2:end,2) = -coefW1 * ones(obj.L-1,1);
-%             % For i=2,
-%             output(1,3) = (-1)^1 * coefW1;
-%             output(2:end,3) = -coefW1 * ones(obj.L-1,1);
-%             % For i=3,4,...,L+1
-%             for i=3:obj.L+1
-%                 output(1,i) = (-1)^i * coefW1;
-%                 output(2:end,i) = -coefW1 * ones(obj.L-1,1);
-%             end
-%             % For i=L+2
-%             output(end,end) = coefW1;
-%             
-%             obj.X_ij_Sigma_points = output;
-%         end
+        function output = Calc_Xij_coefficient_matrix_ver1(obj)
+            output = zeros(obj.L, obj.L+2);
+            % For i=0, the 1st column has been already filled with zeros
+            
+            coefW1 = 1/(2 * obj.W_m_i(2,1))^(1/2);
+            % For i=1,
+            output(1,2) = (-1)^2 * coefW1;
+            output(2:end,2) = -coefW1 * ones(obj.L-1,1);
+            % For i=2,
+            output(1,3) = (-1)^1 * coefW1;
+            output(2:end,3) = -coefW1 * ones(obj.L-1,1);
+            % For i=3,4,...,L+1
+            for i=3:obj.L+1
+                output(1,i) = (-1)^i * coefW1;
+                output(2:end,i) = -coefW1 * ones(obj.L-1,1);
+            end
+            % For i=L+2
+            output(end,end) = coefW1;
+        end
         
     end
 end
