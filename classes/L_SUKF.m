@@ -10,7 +10,7 @@ classdef L_SUKF < handle
         X_ij_Sigma_points;        % ij Sigma point values
         X_i_Sigma_points;         % i Sigma point values                   
         W0 = 0.5;                 % The initial state weight coefficient value, 0 <= W_0 < 1
-        W1 = 0.5;                 % The initial state weight coefficient value
+        W_i;                      % The weight coefficient values, W_i, 0 <= i <= L+1
         
         alpha_coef = 0.003;       % The positive zooming factor, 0.0001 <= alpha <= 1
         beta_coef = 2;            % The coefficient to incorporate the prior knowledge of the X parameters pdfs, beta = 2 for Gaussian PDF
@@ -89,15 +89,14 @@ classdef L_SUKF < handle
             obj.W_m_i    = zeros(obj.L+2, 1);
             % Initialize the weight coefficients of the Sigma sampling points
             obj.W_c_i    = zeros(obj.L+2, 1);
-           
-            obj.CalcW_m_i_coefs();
-            obj.CalcW_c_i_coefs();
             
             obj.X_ij_Sigma_points = zeros(obj.L, obj.L+2);
             obj.X_i_Sigma_points  = zeros(obj.L, obj.L+2);
             
             %obj.Calc_Xij_coefficient_matrix_incor();
             obj.X_ij_Sigma_points = obj.Calc_Xij_coefficient_matrix_ver2();
+            obj.CalcW_m_i_coefs();
+            obj.CalcW_c_i_coefs();
             
             obj.B        = [obj.dV_ib_k; obj.eps_b_k; obj.delta_b_k];
             obj.X_k_1    = [obj.phi_b_k; obj.B];
@@ -283,7 +282,7 @@ classdef L_SUKF < handle
             inv_phi_b_k = inv(obj.phi_b_k_SO3);
             nu_a = zeros(phiLen, size(sigmaYpoints,2));
             for i=1:size(sigmaYpoints,2)
-                temp = obj.so3_to_SO3(obj.getSkewSym(sigmaYpoints(1:phiLen, i))) - inv_phi_b_k;
+                temp = obj.so3_to_SO3(obj.getSkewSym(sigmaYpoints(1:phiLen, i))) * inv_phi_b_k;
                 nu_a(:,i) = obj.so3_to_euclid(obj.SO3_to_so3(temp));
             end
             
@@ -355,6 +354,7 @@ classdef L_SUKF < handle
             
             % Calc the second term of the SigmaX point formula
             P_sq_root = sqrtm(P_matrix);
+            %P_sq_root = sqrt(P_matrix);
             
             % The loop for main calculation of the Sigma X points
             for i=1:obj.L+2
@@ -366,13 +366,18 @@ classdef L_SUKF < handle
         %% Fill in the Xij-coefficient matrix
         function output = Calc_Xij_coefficient_matrix_ver2(obj)
             output = nan(obj.L, obj.L+2);
-            % For i=0,4,...,L+1
+            
+            % Calculate the W_i coefficients for ksi^j_i formulas
+            obj.W_i = zeros(obj.L+1,1);
+            obj.W_i(1,1) = (1 - obj.W0)/2^obj.L;
+            obj.W_i(2,1) = obj.W_i(1);
+            for i=3:obj.L+1
+                obj.W_i(i,1) = 2^(i-1) * obj.W_i(1,1);
+            end
+            
+            % For i=0,1,...,L+1
             for i=0:obj.L+1
-                if i < 4
-                    output(:,i+1) = get_Xij_vector(obj, obj.L, i);
-                else
-                    output(i-2:end,i+1) = get_Xij_vector(obj, obj.L, i);
-                end
+                output(:,i+1) = get_Xij_vector(obj, obj.L, i);
             end
         end
 
@@ -389,23 +394,23 @@ classdef L_SUKF < handle
             elseif i == 1 || i == 2
                 if j == 1
                     if i == 1
-                        output = -1 / sqrt(2 * obj.W_m_i(2,1));
+                        output = -1 / sqrt(2 * obj.W_i(1,1));
                         return
                     end
                     if i == 2
-                        output = 1 / sqrt(2 * obj.W_m_i(2,1));
+                        output = 1 / sqrt(2 * obj.W_i(1,1));
                         return 
                     end
                 else
-                    output = [obj.get_Xij_vector(j-1, i); -1 / sqrt(2 * obj.W_m_i(2,1))];
+                    output = [obj.get_Xij_vector(j-1, i); -1 / sqrt(2 * obj.W_i(j+1,1))];
                     return
                 end
             elseif i > 2
                 if i <= j
-                    output = [obj.get_Xij_vector(j-1, i); -1 / sqrt(2 * obj.W_m_i(2,1))];
+                    output = [obj.get_Xij_vector(j-1, i); -1 / sqrt(2 * obj.W_i(j+1,1))];
                     return
                 elseif i == (j + 1)
-                    output = [0; 1 / sqrt(2 * obj.W_m_i(2,1))];
+                    output = [zeros(j-1,1); 1 / sqrt(2 * obj.W_i(j+1,1))];
                     return
                 end
             end
@@ -416,21 +421,21 @@ classdef L_SUKF < handle
         %% Calculate the W_m_i coefficients
         function CalcW_m_i_coefs(obj)
             % W_m_0
-            obj.W_m_i(1,1) = (obj.W0^2)/(obj.alpha_coef^2) + (1 - 1/(obj.alpha_coef^2));
+            obj.W_m_i(1,1) = obj.W0/(obj.alpha_coef^2) + (1 - 1/(obj.alpha_coef^2));
             % W_m_1
             obj.W_m_i(2,1) = (1 - obj.W0) / (2^obj.L) / (obj.alpha_coef^2);
             % W_m_2
             obj.W_m_i(3,1) = obj.W_m_i(2,1);
             % Calculate all remaining values of W_m_i, i=3..n+1
             for i=4:obj.L+2
-                obj.W_m_i(i,1) = 2^(i-1-2) * obj.W1 / obj.alpha_coef^2;
+                obj.W_m_i(i,1) = 2^(i-1-2) * obj.W_i(1,1) / obj.alpha_coef^2;
             end
         end
         
         %% Calculate the W_c_i coefficients
         function CalcW_c_i_coefs(obj)
             % W_c_0
-            obj.W_c_i(1,1) = obj.W_m_i(1,1) + (obj.W0 + 1 + obj.beta_coef - obj.alpha_coef^2);
+            obj.W_c_i(1,1) = obj.W_m_i(1,1) + 1 + obj.beta_coef - obj.alpha_coef^2;
             % Calculate all remaining values of W_c_i, i=2..n+1
             for i=2:obj.L+2
                 obj.W_c_i(i,1) = obj.W_m_i(i,1);
