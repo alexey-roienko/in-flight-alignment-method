@@ -353,8 +353,8 @@ classdef L_SUKF < handle
             output = zeros(obj.L, obj.L+2);
             
             % Calc the second term of the SigmaX point formula
-            P_sq_root = sqrtm(P_matrix);
-            %P_sq_root = sqrt(P_matrix);
+            P_sq_root = chol(P_matrix);
+            %P_sq_root = sqrtm(P_matrix);
             
             % The loop for main calculation of the Sigma X points
             for i=1:obj.L+2
@@ -364,6 +364,8 @@ classdef L_SUKF < handle
 
 
         %% Fill in the Xij-coefficient matrix
+        %    Min skew simplex UT approach (from the article in the file - 
+        %      "Scale_corrected_minimal_skew_simplex_sampling_UKF_for_BLDCM_sensorless.pdf")
         function output = Calc_Xij_coefficient_matrix_ver2(obj)
             output = nan(obj.L, obj.L+2);
             
