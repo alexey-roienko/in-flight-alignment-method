@@ -107,7 +107,7 @@ classdef L_SUKF < handle
             obj.P_k_pred = zeros(size(obj.P_k_1));
             obj.P_k      = zeros(size(obj.P_k_1));
             
-            obj.F        = ones(size(obj.X_k, 1));            
+            obj.F        = zeros(size(obj.X_k,1));            
             obj.G        = zeros(size(obj.X_k,1));
             
             dV_size      = size(obj.dV_ib_k,1);
@@ -263,7 +263,7 @@ classdef L_SUKF < handle
         function output = calcQ(obj, R_ib_b)
             obj.G(1:3, 1:3) = -R_ib_b;
             obj.G(4:6, 4:6) = R_ib_b;            
-            output = obj.G * [ones(3,1)*obj.w_b_g; ones(3,1)*obj.w_b_a; zeros(6,1)];
+            output = obj.TS * obj.G * [ones(3,1)*obj.w_b_g; ones(3,1)*obj.w_b_a; zeros(6,1)];
         end
         
         
@@ -328,23 +328,16 @@ classdef L_SUKF < handle
 
         %% Calculate SigmaY values as SigmaY = f(SigmaX)
         function output = calc_SigmaY_values(obj, acc, R_ib_b)
-            % 1a - Calculate SigmaX points based on the X(k-1) state (size = [L, 2L+1])
+            % Calculate SigmaX points based on the X(k-1) state (size = [L, 2L+1])
             sigmaX_points = obj.Calc_Ksi_i_Sigma_points(obj.X_k_1, obj.P_k_1);
             
-            % Calc A matrix values
-            acc_abs = sqrt(sum(acc.^2));
-            p_vect = acc / acc_abs;            
-            exp_f_sks_dt = cos(obj.TS * acc_abs * ones(3)) + ...
-                           (1 - cos(obj.TS * acc_abs)) * (p_vect * p_vect') + ...
-                           sin(obj.TS * acc_abs * obj.getSkewSym(p_vect));
-            exp_R_ib_b_dt = exp(obj.TS * R_ib_b);
-            exp_minus_R_ib_b_dt = exp(-obj.TS * R_ib_b);
+            % Calculate matrix F
+            obj.F(1:3, 7:9)   = -R_ib_b;
+            obj.F(4:6, 1:3)   = obj.getSkewSym(acc);
+            obj.F(4:6, 10:12) = R_ib_b;
             
-            obj.F(1:3, 7:9)   = exp_minus_R_ib_b_dt;
-            obj.F(4:6, 1:3)   = exp_f_sks_dt;
-            obj.F(4:6, 10:12) = exp_R_ib_b_dt;
-            
-            output = obj.F * sigmaX_points;
+            % Compose State Prediction Equation as X(k|k-1) = (I+dT*F)* X(k-1)
+            output = (eye(obj.L) + obj.TS * obj.F) * sigmaX_points;
         end
             
         
