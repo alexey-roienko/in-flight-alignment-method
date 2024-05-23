@@ -50,6 +50,16 @@ end
 clear TS
 
 
+%%
+if INI.visualize.rawSensorPlots
+    SENSORPLOTTER.plotOneSensorSignal(timeIMU, accData, 'Accelerometer', 'm/sec^2', ...
+        {'acc_X', 'acc_Y', 'acc_Z'});
+    SENSORPLOTTER.plotOneSensorSignal(timeIMU, rad2deg(gyroData), 'Gyroscope', 'deg/sec.', ...
+        {'gyro_X', 'gyro_Y', 'gyro_Z'});
+end
+
+
+
 %% RM_b_n calculation method implementation
 IFA_obj = IFA_Method('L_in', gpsLocData(1,1), 'lambda_in', gpsLocData(1,2),...
                      'TS_IMU', dataParams.IMU_TS, 'TS_GPS', dataParams.GPS_TS);
