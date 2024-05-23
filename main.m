@@ -58,6 +58,12 @@ if INI.visualize.rawSensorPlots
         {'gyro_X', 'gyro_Y', 'gyro_Z'});
 end
 
+if INI.visualize.rawGPSDataPlots
+    SENSORPLOTTER.plotOneSensorSignal(timeGPS, gpsLocData, 'GPS Location Data', 'degs.', ...
+        {'Latitude', 'Longitude', 'Altitude'});
+    SENSORPLOTTER.plotOneSensorSignal(timeGPS, gpsVelData, 'GPS Velocity Data', 'm/sec.', ...
+        {'Vel_E', 'Vel_N', 'Vel_U'});
+end
 
 
 %% RM_b_n calculation method implementation
