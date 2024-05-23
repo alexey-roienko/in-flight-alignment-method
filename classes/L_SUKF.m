@@ -278,13 +278,21 @@ classdef L_SUKF < handle
             phiLen  = size(obj.phi_b_k, 1);
             ksiB_sigma_points = sigmaYpoints(phiLen+1:phiLen+size(obj.B,1), :);
             
-            % Calculate nu_a
+            % Calculate nu_a - the article variant
             inv_phi_b_k = inv(obj.phi_b_k_SO3);
             nu_a = zeros(phiLen, size(sigmaYpoints,2));
             for i=1:size(sigmaYpoints,2)
                 temp = obj.so3_to_SO3(obj.getSkewSym(sigmaYpoints(1:phiLen, i))) * inv_phi_b_k;
                 nu_a(:,i) = obj.so3_to_euclid(obj.SO3_to_so3(temp));
             end
+            
+            % Calculate nu_a - the variant based on Frobenius norm
+%             inv_phi_b_k = obj.phi_b_k_SO3;
+%             nu_a = zeros(phiLen, size(sigmaYpoints,2));
+%             for i=1:size(sigmaYpoints,2)
+%                 temp = (obj.so3_to_SO3(obj.getSkewSym(sigmaYpoints(1:phiLen, i))))' * inv_phi_b_k;
+%                 nu_a(:,i) = norm(obj.SO3_to_so3(temp), 'fro');  % here is an error because the output is a one number, not a vector 3x1
+%             end
             
             % Calculate nu_b
             nu_b = zeros(size(obj.B,1), size(sigmaYpoints,2));
