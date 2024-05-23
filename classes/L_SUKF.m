@@ -108,7 +108,7 @@ classdef L_SUKF < handle
             obj.P_k      = zeros(size(obj.P_k_1));
             
             obj.F        = zeros(size(obj.X_k,1));            
-            obj.G        = zeros(size(obj.X_k,1));
+            obj.G        = zeros(size(obj.X_k,1), 6);
             
             dV_size      = size(obj.dV_ib_k,1);
             obj.H        = [eye(dV_size) zeros(dV_size, size(obj.X_k,1)-dV_size)];
@@ -263,7 +263,7 @@ classdef L_SUKF < handle
         function output = calcQ(obj, R_ib_b)
             obj.G(1:3, 1:3) = -R_ib_b;
             obj.G(4:6, 4:6) = R_ib_b;            
-            output = obj.TS * obj.G * [ones(3,1)*obj.w_b_g; ones(3,1)*obj.w_b_a; zeros(6,1)];
+            output = obj.TS * obj.G * [ones(3,1)*obj.w_b_g; ones(3,1)*obj.w_b_a];
         end
         
         
@@ -302,7 +302,8 @@ classdef L_SUKF < handle
             end
             
             % Add the model Noise matrix
-            output = tempP + obj.Q;
+            %output = tempP + eye(obj.L) * obj.Q * (eye(obj.L)');
+            output = tempP + diag(obj.Q);
         end
         
         
