@@ -111,7 +111,8 @@ classdef L_SUKF < handle
             obj.G        = zeros(size(obj.X_k,1), 6);
             
             dV_size      = size(obj.dV_ib_k,1);
-            obj.H        = [eye(dV_size) zeros(dV_size, size(obj.X_k,1)-dV_size)];
+            obj.H        = [zeros(size(obj.phi_b_k, 1)), eye(dV_size) ...
+                            zeros(size(obj.eps_b_k, 1)), zeros(size(obj.delta_b_k, 1))];
             obj.Z        = zeros(size(dV_size,1));
             
             obj.R        = obj.calcR();
