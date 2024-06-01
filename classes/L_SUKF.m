@@ -154,15 +154,15 @@ classdef L_SUKF < handle
             dX_k         = obj.K * (obj.Z - obj.Z_pred);
             
             %       2e:Update the both parts of the X vector
-%             phi_b_k_upd  = exp(dX_k(1:size(obj.phi_b_k_SO3,1), 1)) .* ...
-%                               obj.X_k_pred(1:size(obj.phi_b_k,1), 1);
-            phi_b_k_upd  = dX_k(1:size(obj.phi_b_k,1), 1) + ...
-                              obj.X_k_pred(1:size(obj.phi_b_k,1), 1);
+            % Update the RM according to the article
+            phi_b_k_upd  = obj.so3_to_SO3(obj.getSkewSym(dX_k(1:size(obj.phi_b_k_SO3,1), 1))) * ...
+                                          obj.phi_b_k_SO3;
             B_upd        = dX_k(size(obj.phi_b_k,1)+1:end, 1) + ...
-                              obj.X_k_pred(size(obj.phi_b_k,1)+1:end, 1);
+                           obj.X_k_pred(size(obj.phi_b_k,1)+1:end, 1);
             
-            obj.phi_b_k  = phi_b_k_upd;
-            obj.B        = B_upd;
+            obj.phi_b_k_SO3 = phi_b_k_upd;
+            obj.phi_b_k     = obj.so3_to_euclid(obj.SO3_to_so3(phi_b_k_upd));
+            obj.B           = B_upd;
             
             % Note that B = [dV_ib_k; eps_b_k; delta_b_k]
             obj.dV_ib_k  = B_upd(1:size(obj.dV_ib_k,1), 1);
@@ -170,6 +170,7 @@ classdef L_SUKF < handle
                                  size(obj.dV_ib_k,1)+size(obj.eps_b_k,1), 1);
             obj.delta_b_k= B_upd(size(obj.dV_ib_k,1)+size(obj.eps_b_k,1)+1:...
                                  size(obj.dV_ib_k,1)+size(obj.eps_b_k,1)+size(obj.delta_b_k,1), 1);
+            
             obj.X_k      = [obj.phi_b_k; obj.B];
             
             %       2f:Update the Covariance matrix (P(k)) of the system
