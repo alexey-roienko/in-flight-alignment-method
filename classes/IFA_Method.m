@@ -245,15 +245,30 @@ classdef IFA_Method < handle
             end
         end
         
+        %% Convertion from so(3) space to SO(3) space
+        function output = getSO3_from_Euclid(obj, inp_euclid_vect)
+            output = zeros(3);
+            if (numel(inp_euclid_vect) == 3)
+                %vect_phi = obj.so3_to_euclid(inp_euclid_vect);
+                vect_phi = inp_euclid_vect;
+                len_phi  = sqrt(vect_phi(1)^2 + vect_phi(2)^2 + vect_phi(3)^2);
+                vect_p   = vect_phi / len_phi;
+                
+                output = cos(len_phi) * diag(ones(3,1)) + ...
+                    (1 - cos(len_phi))* vect_p * (vect_p') + ...
+                    sin(len_phi) * obj.getSkewSym(vect_p);
+
+            else
+                warning('IFA_Method.getSO3_from_Euclid(): Wrong input vector dimension!');
+            end
+        end
         
         %% Method provides the determination of the RM^b(t)_bi matrix based on the Eq.(11)
         function output = getCurrRM_bt(obj, currGyro)
             output = zeros(3);
-            if length(currGyro) == 3
-                % 1. Der_RM(t) = -(skew-sym-matr from Gyro vector) * RM(t-1)
-                deriv_RM_bt_bi = - obj.getSkewSym(currGyro) * obj.RM_bt_ib;
-                % 2. RM(t) = RM(t-1) + Der_RM(t) * TS
-                output = obj.RM_bt_ib + deriv_RM_bt_bi * obj.TS_IMU;
+            if length(currGyro) == 3                
+                % The solution based on the solving the diff equation
+                output = obj.RM_bt_ib * obj.getSO3_from_Euclid(-currGyro * obj.TS_IMU);
             else
                 warning('IFA_Method.getCurrRM_bt(): Wrong input Gyro vector dimension!');
             end
