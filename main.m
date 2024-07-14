@@ -20,6 +20,8 @@ INI = INI('File','config.ini').read();
 fname = [logsFolder filesep logFileName '.' INI.general.logFilesExt];
 %[timeIMU, accData, gyroData, anglesData] = LOGS_READER.readIMU(fname, INI);
 [timeIMU, accData, gyroData] = LOGS_READER.readIMU(fname, INI);
+% Change the direction of the Z axis
+gyroData(:,3) = -gyroData(:,3);
 
 fname = [logsFolder filesep logFileName '.' INI.general.logFilesExt];
 [timeGPS, gpsLocData, gpsVelData] = LOGS_READER.readGPS(fname, INI);
