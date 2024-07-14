@@ -54,7 +54,7 @@ clear TS
 if INI.visualize.rawSensorPlots
     SENSORPLOTTER.plotOneSensorSignal(timeIMU, accData, 'Accelerometer', 'm/sec^2', ...
         {'acc_X', 'acc_Y', 'acc_Z'});
-    SENSORPLOTTER.plotOneSensorSignal(timeIMU, rad2deg(gyroData), 'Gyroscope', 'deg/sec.', ...
+    SENSORPLOTTER.plotOneSensorSignal(timeIMU, gyroData, 'Gyroscope', 'rad/sec.', ...
         {'gyro_X', 'gyro_Y', 'gyro_Z'});
 end
 
@@ -76,7 +76,7 @@ gpsTsCheck = true;
 for t=2:length(timeIMU)
     % If it is time for the GPS data, update the method with it
     if gpsTsCheck && (timeGPS(time_GPS_index) <= timeIMU(t))
-        IFA_obj.updateGPSData(timeGPS(time_GPS_index), gpsLocData(time_GPS_index, 1:2));
+        IFA_obj.updateGPSData(timeGPS(time_GPS_index), gpsLocData(time_GPS_index, :));
         time_GPS_index = time_GPS_index + 1;
         if time_GPS_index > length(time_GPS_index)
             gpsTsCheck = false;

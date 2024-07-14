@@ -265,7 +265,7 @@ classdef L_SUKF < handle
         function output = calcQ(obj, R_ib_b)
             obj.G(1:3, 1:3) = -R_ib_b;
             obj.G(4:6, 4:6) = R_ib_b;            
-            output = obj.TS * obj.G * [ones(3,1)*obj.w_b_g; ones(3,1)*obj.w_b_a];
+            output = obj.TS * obj.G * [obj.w_b_g; obj.w_b_a];
         end
         
         
