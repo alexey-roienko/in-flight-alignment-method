@@ -10,6 +10,7 @@ classdef IFA_Method < handle
         gBias     = zeros(3,1);  % Tracking Gyro bias values obtained from the UKF
         aBias     = zeros(3,1);  % Tracking Accel bias values obtained from the UKF
         
+        RM_bt_ib_1= eye(3);      % RM of the previous Body position with respect to the Body Initial position
         RM_bt_ib  = eye(3);      % RM of the current Body position with respect to the Body Initial position
         RM_ib_in  = eye(3);      % RM of the Body initial position with respect to the Nav Frame initial position
         RM_in_nt  = eye(3);      % RM of the Initial Nav frame position with respect to the current Nav frame position
@@ -17,6 +18,11 @@ classdef IFA_Method < handle
         
         V_ib_k    = zeros(3,1);  % Attitude determination vector in "ib" frame
         V_in_k    = zeros(3,1);  % Attitude determination vector in "in" frame
+        
+        V_ib_bt_conter = 0;      % Necessary to store the M-2 terms
+        part1_M_2  = zeros(3,1); % According to the Table II [ref 35], C^b(0)_b(t_M-2)*(...)
+        part1_M_1  = zeros(3,1); % According to the Table II [ref 35], C^b(0)_b(t_M-1)*(...)
+        part1_cur  = zeros(3,1); % According to the Table II [ref 35], sum(C^b(0)_b(t_M)*(...))
     end
     
 %     properties (Access = private)
@@ -300,7 +306,9 @@ classdef IFA_Method < handle
         %% Method provides Attitude determination vector in "ib" frame from the current Accel readings
         function output = getV_ib_k(obj, curr_t, currAccel, currGyro)
             output = zeros(3);
-            if (length(currAccel) == 3) && (length(currGyro) == 3)
+            if (length(currAccel) == 3) && (length(currGyro) == 3)                
+                obj.V_ib_bt_conter = obj.V_ib_bt_conter + 1;
+            
                 dt = curr_t - obj.prev_t; 
                 dw = currGyro - obj.prev_gyro;
                 df = currAccel - obj.prev_acc;
@@ -309,24 +317,54 @@ classdef IFA_Method < handle
                 a_f = df/dt;
                 b_w = currGyro - curr_t * a_w;
                 b_f = currAccel - curr_t * a_f;
-                                                
-%                 dTet1 = dt/2 * (dw/4 + currGyro - curr_t * dw/dt);
-%                 dTet2 = dt*(dw/2 + currGyro) - curr_t * dw - dTet1;
-%                 dV1 = dt/2 * (df/4 + currAccel - curr_t * df/dt);
-%                 dV2 = dt*(df/2 + currAccel) - curr_t * df - dV1;
 
-                dTet1 = dt^2/8 * a_w + dt/2 * b_w;
-                dV1   = dt^2/8 * a_f + dt/2 * b_f;
+                % Calc phi_B parameter as 
+                %      phi_B = dTet1 + dTet2 + 2/3 * (dTet1x) * dTet2
+                dTet1_tk = dt^2 / 8 * a_w + dt/2 * b_w;
+                dTet2_tk = 3 * dt^2 / 8 * a_w + dt / 2 * b_w;
+                dTet1_ss = obj.getSkewSym(dTet1_tk);
+                dTet2_ss = obj.getSkewSym(dTet2_tk);
                 
-                dTet2 = 3/8 * dt^2 * a_w + dt/2 * b_w;
-                dV2   = 3/8 * dt^2 * a_f + dt/2 * b_f;
+                dV1_tk = dt^2 / 8 * a_f + dt/2 * b_f;
+                dV2_tk = 3/8 * dt^2 * a_f + dt/2 * b_f;
+                dV1_ss = obj.getSkewSym(dV1_tk);
                 
-                dTet1_ss = obj.getSkewSym(dTet1);
-                dTet2_ss = obj.getSkewSym(dTet2);
-                dV1_ss   = obj.getSkewSym(dV1);
+                phi_B = dTet1_tk + dTet2_tk + 2/3 * dTet1_ss * dTet2_tk;
+                phi_B_ss = obj.getSkewSym(phi_B);
                 
-                output = dt/30 * (25*dV1 + 5*dV2 + 12*dTet1_ss*dV1 + 8*dTet1_ss*dV2 + ...
-                    2*dV1_ss*dTet2 + 2*dTet2_ss*dV2);
+                % R^bt(m-1)_bt(m)
+                phi_norm = norm(phi_B);
+                R_btm1_btm = eye(3) + sin(phi_norm) / phi_norm + ...
+                    (1 - cos(phi_norm)) / (phi_norm^2) * phi_B_ss^2; 
+                
+                part2 = dt/30 * (25*dV1_tk + 5*dV2_tk + 12*dTet1_ss*dV1_tk + 8*dTet1_ss*dV2_tk + ...
+                    2*dV1_ss*dTet2_tk + 2*dTet2_ss*dV2_tk);
+                                
+                % Update the RM^bt(M-2)_ib from M-2 to M-1
+                obj.RM_bt_ib_1 = (obj.RM_bt_ib' * R_btm1_btm)';
+                
+                % Update the RM^bt(M-1)_ib from M-1 to M
+                obj.RM_bt_ib = (obj.RM_bt_ib' * R_btm1_btm)';
+                
+                % Calculate and store part 1 of Step 3
+                temp = obj.RM_bt_ib * (dV1_tk + dV2_tk + ...
+                       1/2 * obj.getSkewSym(dTet1_tk + dTet2_tk) * (dV1_tk + dV2_tk) + ...
+                       2/3 * (dTet1_ss * dV2_tk + obj.getSkewSym(dV1_tk) * dTet2_tk));
+                if obj.V_ib_bt_conter < 3
+                    switch obj.V_ib_bt_conter
+                    case 1
+                        obj.part1_M_2 = temp;
+                    case 2
+                        obj.part1_M_1 = temp;
+                    end
+                else
+                    obj.part1_cur = obj.part1_cur + obj.part1_M_2;
+                    obj.part1_M_2 = obj.part1_M_1;
+                    obj.part1_M_1 = temp;
+                end
+                
+                % see ref. 35, Table II, step 3:
+                output = obj.V_ib_k + dt * obj.part1_cur + part2;
             else
                 warning('IFA_Method.getV_ib_k(): Wrong input Accel or Gyro vector dimension!');
             end
