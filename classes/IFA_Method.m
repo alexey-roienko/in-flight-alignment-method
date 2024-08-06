@@ -23,9 +23,11 @@ classdef IFA_Method < handle
         RM_in_nt  = eye(3);      % RM of the Initial Nav frame position with respect to the current Nav frame position
         RM_n0_n0   = eye(3);      % RM of the Initial Nav frame position with respect to the current Nav frame position
         RM_in_n_tM1  = eye(3);     % According to the Table II [ref 35], C^n(0)_n_t(M-1)
-        RM_in_n_tM2  = zeros(3,1); % According to the Table II [ref 35], C^n(0)_n(t_M-2)*(...)
+        RM_in_n_tM2  = eye(3);     % According to the Table II [ref 35], C^n(0)_n(t_M-2)*(...)
         part2_M_1_in  = zeros(3,1); % According to the Table II [ref 35], C^n(0)_n(t_M-1)*(...)
         part2_cur_in  = zeros(3,1); % According to the Table II [ref 35], sum(C^n(0)_n(t_M)*(...))
+        term3_part3 = zeros(3,1);   % According to the Table II [ref 35], sum(...)
+        term4_part3 = zeros(3,1);   % According to the Table II [ref 35], sum(...)
         t4_p3_sum = zeros(3,1);
         
         V_ib_k    = zeros(3,1);  % Attitude determination vector in "ib" frame
@@ -73,6 +75,7 @@ classdef IFA_Method < handle
         prev_acc  = 1e-5*ones(3,1); % Previous value (at t(k-1)) of Body Frame acceleration
         prev_gyro = 1e-5*ones(3,1); % Previous value (at t(k-1)) of Body Frame gyroscope
         prev_vel  = 1*ones(3,1);    % Previous value (at t(k-1)) of Nav Frame velocity
+        prev_vel_tM2 = 1*ones(3,1); % Previous value (at t(k-2)) of Nav Frame velocity
         init_vel  = zeros(3,1);     % Initial velocity at t = 0
         
         L_SUKF_filt;                % Instance of the L-SUKF filter    
@@ -188,6 +191,7 @@ classdef IFA_Method < handle
             obj.prev_t    = curr_t;
             obj.prev_acc  = modAccel;
             obj.prev_gyro = modGyro;
+            obj.prev_vel_tM2 = obj.prev_vel;
             obj.prev_vel  = newVel;
         end
         
@@ -393,8 +397,6 @@ classdef IFA_Method < handle
             if length(gpsVelocity) == 3
                 obj.V_in_nt_counter = obj.V_in_nt_counter + 1;
                 dt = curr_t - obj.prev_t;
-                dV = gpsVelocity - obj.prev_vel;                
-                w_n_ss = obj.getSkewSym(2*obj.w_n_ie + obj.w_n_en);
                 
                 % Calc phi_N parameter as phi_N = T*owega^n_in
                 phi_N = dt * obj.w_n_in;
@@ -404,67 +406,44 @@ classdef IFA_Method < handle
                 phi_norm = norm(phi_N);
                 RM_ntm1_ntm = eye(3) + sin(phi_norm) / phi_norm * phi_N_ss + ...
                     (1 - cos(phi_norm)) / (phi_norm^2) * phi_N_ss^2;
-                                
-                % Update the RM^bt(M-2)_ib from M-2 to M-1
-                %obj.RM_bt_ib_1 = (obj.RM_bt_ib' * R_btm1_btm)';
+            
                 
-                
-                % Calc Term 1
+                %% Calc Term 1
                 term1 = obj.u_r_tm + obj.RM_in_n_tM1 * ...
                     ((dt/2 * eye(3) + dt^2/6 * obj.w_n_in_ss) * obj.prev_vel + ...
                      (dt/2 * eye(3) + dt^2/3 * obj.w_n_in_ss) * gpsVelocity);
                 obj.u_r_tm = term1;
                 
                 
-                % Calc Term 2
+                %% Calc Term 2
                 term2 = curr_t * obj.init_vel;
                 
                 
-                % Calc Term 3
-%                 if obj.V_in_nt_counter < 3
-%                     switch obj.V_in_nt_counter
-%                     case 1
-%                         obj.part2_cur_in = 0;
-%                         sum_part = 0;
-%                     case 2
-%                         obj.R_in_n_tm;
-%                         obj.part2_cur_in = obj.C_n0_n0 * ...
-%                             ((dt/2 * eye(3) + dt^2/6 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.init_vel + ...
-%                              (dt/2 * eye(3) + dt^2/3 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.obj.prev_vel);
-%                         sum_part = obj.part2_cur_in;
-%                     end
-%                 else
-%                     obj.part2_cur_in = obj.C_n0_n0 * ...
-%                        ((dt/2 * eye(3) + dt^2/6 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.init_vel + ...
-%                         (dt/2 * eye(3) + dt^2/3 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.obj.prev_vel);
-%                     
-%                     
-%                     obj.part1_cur = obj.part1_cur + obj.part1_M_2;
-%                     obj.part1_M_2 = obj.part1_M_1;
-%                     obj.part1_M_1 = sum_part;
-%                 end
-%                 
-%                 
-%                 term3 = obj.u_v_tm + obj.R_in_n_tm * ...
-%                     ((dt^2/3 * eye(3) + dt^3/12 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.prev_vel + ...
-%                      (dt^2/6 * eye(3) + dt^3/12 * obj.w_n_in_ss) * obj.w_n_ie_ss * gpsVelocity) + ...
-%                      dt * sum_part;
-                term3 = 0;
+                %% Calc Term 3
+                if obj.V_in_nt_counter > 1
+                    obj.term3_part3 = obj.term3_part3 + obj.RM_in_n_tM2 * ...
+                       ((dt/2 * eye(3) + dt^2/6 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.prev_vel_tM2 + ...
+                        (dt/2 * eye(3) + dt^2/3 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.prev_vel);
+                end
+                term3 = obj.u_v_tm + obj.RM_in_n_tM1 * ...
+                    ((dt^2/3 * eye(3) + dt^3/12 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.prev_vel + ...
+                     (dt^2/6 * eye(3) + dt^3/12 * obj.w_n_in_ss) * obj.w_n_ie_ss * gpsVelocity) + ...
+                     dt * obj.term3_part3;
                 obj.u_v_tm = term3;
                 
                 
-                % Calc Term 4
-                if obj.V_in_nt_counter < 3
-                    temp4 = 0;
-                else
-                    temp4 = obj.RM_in_n_tM2 * (dt * eye(3) + dt^2/2 * obj.w_n_in_ss) * obj.curr_grav;
+                %% Calc Term 4
+                if obj.V_in_nt_counter > 1
+                    obj.term4_part3 = obj.term4_part3 + obj.RM_in_n_tM2 * (dt * eye(3) + ...
+                        dt^2/2 * obj.w_n_in_ss) * obj.curr_grav;
                 end
                 term4 = obj.u_g_tm + obj.RM_in_n_tM1 * ...
                     (dt^2 / 2 * eye(3) + dt^3 / 6 * obj.w_n_in_ss) * obj.curr_grav + ...
-                    dt * temp4;
+                    dt * obj.term4_part3;
                 obj.u_g_tm = term4;
                 
-                % Update the RM^in_n(tM)
+                
+                %% Update the RM^in_n(tM)
                 obj.RM_in_nt = obj.RM_in_n_tM1 * RM_ntm1_ntm;
                 % Update the RM^in_nt(M-2) from M-2 to M-1
                 obj.RM_in_n_tM2 = obj.RM_in_n_tM1;
