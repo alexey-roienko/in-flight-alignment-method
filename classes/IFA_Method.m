@@ -13,13 +13,23 @@ classdef IFA_Method < handle
         RM_bt_ib_1= eye(3);      % RM of the previous Body position with respect to the Body Initial position
         RM_bt_ib  = eye(3);      % RM of the current Body position with respect to the Body Initial position
         RM_ib_in  = eye(3);      % RM of the Body initial position with respect to the Nav Frame initial position
-        RM_in_nt  = eye(3);      % RM of the Initial Nav frame position with respect to the current Nav frame position
         RM_b_n    = eye(3);      % RM of the Body current position with respect to the Nav Frame current position
         
-        V_ib_k    = zeros(3,1);  % Attitude determination vector in "ib" frame
         V_in_k    = zeros(3,1);  % Attitude determination vector in "in" frame
+        V_in_nt_counter = 0;     % Necessary to store the M-2 terms
+        u_r_tm    = zeros(3,1);  % According to the Table II [ref 35], u_r(T_M-1)
+        u_v_tm    = zeros(3,1);  % According to the Table II [ref 35], u_v(T_M-1)
+        u_g_tm    = zeros(3,1);  % According to the Table II [ref 35], u_g(T_M-1)
+        RM_in_nt  = eye(3);      % RM of the Initial Nav frame position with respect to the current Nav frame position
+        RM_n0_n0   = eye(3);      % RM of the Initial Nav frame position with respect to the current Nav frame position
+        RM_in_n_tM1  = eye(3);     % According to the Table II [ref 35], C^n(0)_n_t(M-1)
+        RM_in_n_tM2  = zeros(3,1); % According to the Table II [ref 35], C^n(0)_n(t_M-2)*(...)
+        part2_M_1_in  = zeros(3,1); % According to the Table II [ref 35], C^n(0)_n(t_M-1)*(...)
+        part2_cur_in  = zeros(3,1); % According to the Table II [ref 35], sum(C^n(0)_n(t_M)*(...))
+        t4_p3_sum = zeros(3,1);
         
-        V_ib_bt_conter = 0;      % Necessary to store the M-2 terms
+        V_ib_k    = zeros(3,1);  % Attitude determination vector in "ib" frame
+        V_ib_bt_counter = 0;     % Necessary to store the M-2 terms
         part1_M_2  = zeros(3,1); % According to the Table II [ref 35], C^b(0)_b(t_M-2)*(...)
         part1_M_1  = zeros(3,1); % According to the Table II [ref 35], C^b(0)_b(t_M-1)*(...)
         part1_cur  = zeros(3,1); % According to the Table II [ref 35], sum(C^b(0)_b(t_M)*(...))
@@ -56,12 +66,14 @@ classdef IFA_Method < handle
         w_n_in    = 2e-4*ones(3,1); % Navigation frame rotation rate with respect to the initial position of this frame
         w_n_in_ss = eye(3);         % Skew-symmetric matrix for the w_n_in
         w_n_ie    = 0*ones(3,1);    % the Earth rotation rate wrt the inertial frame
+        w_n_ie_ss = eye(3);         % Skew-symmetric matrix for the w_n_ie
         w_n_en    = 0*ones(3,1);    % the angular rate of the Navigation frame wrt the Earth frame
         
         prev_t    = 0;              % Timestamp initial value
         prev_acc  = 1e-5*ones(3,1); % Previous value (at t(k-1)) of Body Frame acceleration
         prev_gyro = 1e-5*ones(3,1); % Previous value (at t(k-1)) of Body Frame gyroscope
         prev_vel  = 1*ones(3,1);    % Previous value (at t(k-1)) of Nav Frame velocity
+        init_vel  = zeros(3,1);     % Initial velocity at t = 0
         
         L_SUKF_filt;                % Instance of the L-SUKF filter    
     end
@@ -90,9 +102,13 @@ classdef IFA_Method < handle
             % Initialize the object initial Body gyroscope
             obj.prev_gyro = initGyro;
             % Initialize the object initial velocity
+            obj.init_vel = initVel;
+            % Initialize the object previous velocity
             obj.prev_vel = initVel;
             % Get the skew-sym.matrix of the w_n_in
             obj.w_n_in_ss = obj.getSkewSym( obj.w_n_in );
+            % Get the skew-sym.matrix of the w_n_ie
+            obj.w_n_ie_ss = obj.getSkewSym( obj.w_n_ie );
             % Initialize the object initial Gyro bias values
             obj.gBias    = obj.GyroBias;
             % Initialize the object initial Accel bias values
@@ -307,7 +323,7 @@ classdef IFA_Method < handle
         function output = getV_ib_k(obj, curr_t, currAccel, currGyro)
             output = zeros(3);
             if (length(currAccel) == 3) && (length(currGyro) == 3)                
-                obj.V_ib_bt_conter = obj.V_ib_bt_conter + 1;
+                obj.V_ib_bt_counter = obj.V_ib_bt_counter + 1;
             
                 dt = curr_t - obj.prev_t; 
                 dw = currGyro - obj.prev_gyro;
@@ -334,7 +350,7 @@ classdef IFA_Method < handle
                 
                 % R^bt(m-1)_bt(m)
                 phi_norm = norm(phi_B);
-                R_btm1_btm = eye(3) + sin(phi_norm) / phi_norm + ...
+                R_btm1_btm = eye(3) + sin(phi_norm) / phi_norm * phi_B_ss + ...
                     (1 - cos(phi_norm)) / (phi_norm^2) * phi_B_ss^2; 
                 
                 part2 = dt/30 * (25*dV1_tk + 5*dV2_tk + 12*dTet1_ss*dV1_tk + 8*dTet1_ss*dV2_tk + ...
@@ -350,8 +366,8 @@ classdef IFA_Method < handle
                 temp = obj.RM_bt_ib * (dV1_tk + dV2_tk + ...
                        1/2 * obj.getSkewSym(dTet1_tk + dTet2_tk) * (dV1_tk + dV2_tk) + ...
                        2/3 * (dTet1_ss * dV2_tk + obj.getSkewSym(dV1_tk) * dTet2_tk));
-                if obj.V_ib_bt_conter < 3
-                    switch obj.V_ib_bt_conter
+                if obj.V_ib_bt_counter < 3
+                    switch obj.V_ib_bt_counter
                     case 1
                         obj.part1_M_2 = temp;
                     case 2
@@ -374,25 +390,88 @@ classdef IFA_Method < handle
         %% Method provides Attitude determination vector in "in" frame from the current GPS readings
         function output = getV_in_k(obj, curr_t, gpsVelocity)
             output = zeros(3);
-            if length(gpsVelocity) == 3                
+            if length(gpsVelocity) == 3
+                obj.V_in_nt_counter = obj.V_in_nt_counter + 1;
                 dt = curr_t - obj.prev_t;
                 dV = gpsVelocity - obj.prev_vel;                
                 w_n_ss = obj.getSkewSym(2*obj.w_n_ie + obj.w_n_en);
                 
-                term1 = eye(3) * gpsVelocity * dt + 0.5 * (dt^2) * (obj.w_n_in_ss * gpsVelocity + ...
-                          eye(3) * dV / dt) + 1/3 * (dt^3) * obj.w_n_in_ss * dV / dt ;
+                % Calc phi_N parameter as phi_N = T*owega^n_in
+                phi_N = dt * obj.w_n_in;
+                phi_N_ss = obj.getSkewSym(phi_N);
                 
-                term2 = dt * obj.prev_vel;
+                % R^n(0)_n(tM)
+                phi_norm = norm(phi_N);
+                RM_ntm1_ntm = eye(3) + sin(phi_norm) / phi_norm * phi_N_ss + ...
+                    (1 - cos(phi_norm)) / (phi_norm^2) * phi_N_ss^2;
+                                
+                % Update the RM^bt(M-2)_ib from M-2 to M-1
+                %obj.RM_bt_ib_1 = (obj.RM_bt_ib' * R_btm1_btm)';
                 
-                % Calculate the 3rd component of the equation (16)
-                term3 = (1/3*(dt^2)*eye(3) + 1/12*(dt^3)*obj.w_n_in_ss) * w_n_ss * obj.prev_vel + ...
-                        (1/6*(dt^2)*eye(3) + 1/12*(dt^3)*obj.w_n_in_ss) * w_n_ss * gpsVelocity;
                 
-                % Calculate the 4th component of the equation (16)
-                %term4 = 0.5 * (dt^2) * (eye(3) + dt / 3 * obj.w_n_in_ss) * obj.curr_grav;
-                obj.getW_n_ie(obj.curGPSData(1)) + obj.getW_n_en(obj.curGPSData, gpsVelocity);
+                % Calc Term 1
+                term1 = obj.u_r_tm + obj.RM_in_n_tM1 * ...
+                    ((dt/2 * eye(3) + dt^2/6 * obj.w_n_in_ss) * obj.prev_vel + ...
+                     (dt/2 * eye(3) + dt^2/3 * obj.w_n_in_ss) * gpsVelocity);
+                obj.u_r_tm = term1;
                 
-                output = term1 + term2 + term3;% + term4;
+                
+                % Calc Term 2
+                term2 = curr_t * obj.init_vel;
+                
+                
+                % Calc Term 3
+%                 if obj.V_in_nt_counter < 3
+%                     switch obj.V_in_nt_counter
+%                     case 1
+%                         obj.part2_cur_in = 0;
+%                         sum_part = 0;
+%                     case 2
+%                         obj.R_in_n_tm;
+%                         obj.part2_cur_in = obj.C_n0_n0 * ...
+%                             ((dt/2 * eye(3) + dt^2/6 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.init_vel + ...
+%                              (dt/2 * eye(3) + dt^2/3 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.obj.prev_vel);
+%                         sum_part = obj.part2_cur_in;
+%                     end
+%                 else
+%                     obj.part2_cur_in = obj.C_n0_n0 * ...
+%                        ((dt/2 * eye(3) + dt^2/6 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.init_vel + ...
+%                         (dt/2 * eye(3) + dt^2/3 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.obj.prev_vel);
+%                     
+%                     
+%                     obj.part1_cur = obj.part1_cur + obj.part1_M_2;
+%                     obj.part1_M_2 = obj.part1_M_1;
+%                     obj.part1_M_1 = sum_part;
+%                 end
+%                 
+%                 
+%                 term3 = obj.u_v_tm + obj.R_in_n_tm * ...
+%                     ((dt^2/3 * eye(3) + dt^3/12 * obj.w_n_in_ss) * obj.w_n_ie_ss * obj.prev_vel + ...
+%                      (dt^2/6 * eye(3) + dt^3/12 * obj.w_n_in_ss) * obj.w_n_ie_ss * gpsVelocity) + ...
+%                      dt * sum_part;
+                term3 = 0;
+                obj.u_v_tm = term3;
+                
+                
+                % Calc Term 4
+                if obj.V_in_nt_counter < 3
+                    temp4 = 0;
+                else
+                    temp4 = obj.RM_in_n_tM2 * (dt * eye(3) + dt^2/2 * obj.w_n_in_ss) * obj.curr_grav;
+                end
+                term4 = obj.u_g_tm + obj.RM_in_n_tM1 * ...
+                    (dt^2 / 2 * eye(3) + dt^3 / 6 * obj.w_n_in_ss) * obj.curr_grav + ...
+                    dt * temp4;
+                obj.u_g_tm = term4;
+                
+                % Update the RM^in_n(tM)
+                obj.RM_in_nt = obj.RM_in_n_tM1 * RM_ntm1_ntm;
+                % Update the RM^in_nt(M-2) from M-2 to M-1
+                obj.RM_in_n_tM2 = obj.RM_in_n_tM1;
+                % Update the RM^in_nt(M-1) from M-1 to M
+                obj.RM_in_n_tM1 = obj.RM_in_nt;
+                
+                output = term1 - term2 + term3 - term4;
             else
                 warning('IFA_Method.getV_in_k(): Wrong input GPS velocity or Navigation gravity vector dimension!');
             end
